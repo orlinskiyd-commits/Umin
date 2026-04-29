@@ -4379,10 +4379,34 @@ function buildMatPanel(dayNum, mat, isOpen){
     </div>`;
 }
 
+// ── helper: count unique excerpts (А, Б, В...) in day groups ──
+function countDayExcerpts(dayNum){
+  const d = DAYS.find(d=>d.day===dayNum);
+  if(!d||!d.groups) return 1;
+  const found = new Set();
+  d.groups.forEach(g=>{
+    // Match "Отрывок А", "Отрывок Б" etc in group title
+    const m = g.title.match(/Отрывок\s+([А-ЯЁ])/);
+    if(m) found.add(m[1]);
+  });
+  return found.size > 0 ? found.size : 1;
+}
+
 // ── toggle panel ─────────────────────────────
 function toggleMat(dayNum){
-  if(openMaterials.has(dayNum)) openMaterials.delete(dayNum);
-  else openMaterials.add(dayNum);
+  if(openMaterials.has(dayNum)){
+    openMaterials.delete(dayNum);
+  } else {
+    openMaterials.add(dayNum);
+    // Auto-init segments if none exist yet
+    if(!state.materials[dayNum] || !state.materials[dayNum].segments || state.materials[dayNum].segments.length===0){
+      const count = countDayExcerpts(dayNum);
+      if(!state.materials[dayNum]) state.materials[dayNum]={};
+      state.materials[dayNum].segments = Array.from({length:count}, ()=>({url:'',text:'',translation:''}));
+      state.materials[dayNum]._editing = true;
+      saveData();
+    }
+  }
   buildDays();
 }
 
