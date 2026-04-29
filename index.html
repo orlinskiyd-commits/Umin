@@ -4489,6 +4489,15 @@ function toggleMat(dayNum){
         if(needText && seg.text === null){ seg.text = ''; changed = true; }
         if(!needTranslation && seg.translation !== null && !seg.translation){ seg.translation = null; changed = true; }
         if(needTranslation && seg.translation === null){ seg.translation = ''; changed = true; }
+        // Inherit from previous lesson if fields are empty
+        if(!seg.url || (needText && !seg.text) || (needTranslation && !seg.translation)){
+          const inherited = inheritSegment(dayNum, seg.letter);
+          if(inherited){
+            if(!seg.url && inherited.url){ seg.url = inherited.url; changed = true; }
+            if(needText && !seg.text && inherited.text){ seg.text = inherited.text; changed = true; }
+            if(needTranslation && !seg.translation && inherited.translation){ seg.translation = inherited.translation; changed = true; }
+          }
+        }
       });
       if(changed) saveData();
     }
