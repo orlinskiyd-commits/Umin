@@ -3806,9 +3806,17 @@ function buildDays(){
 
       // build groups
       const groupsHtml = d.groups.map(g=>{
+        const noCheck = !g.badge; // groups with no badge (e.g. "Оценить занятие") have no checkboxes
         const steps = g.steps.map((s,si)=>{
           const stepKey = `${d.day}_${g.n}_${si}`;
           const isChecked = !!(state.stepsDone && state.stepsDone[stepKey]);
+          if(noCheck){
+            return `
+            <div class="step-item" id="si-${stepKey}">
+              <span class="step-dot">●</span>
+              <span class="step-text">${s.t}${s.note?`<span class="step-note">${s.note}</span>`:''}</span>
+            </div>`;
+          }
           return `
           <div class="step-item${isChecked?' checked-step':''}" id="si-${stepKey}">
             <input type="checkbox" class="step-check" id="sc-${stepKey}"
@@ -4284,7 +4292,7 @@ function buildSegPlayerHtml(dayNum, si, url){
 
 // ── build one segment block ───────────────────
 function buildSegBlock(dayNum, si, seg, editMode){
-  const letter = si < LETTERS.length ? LETTERS[si] : (si+1);
+  const letter = seg.letter || (si < LETTERS.length ? LETTERS[si] : (si+1));
   const hasUrl  = !!seg.url;
   const hasText = !!(seg.text||seg.translation);
 
@@ -4293,17 +4301,15 @@ function buildSegBlock(dayNum, si, seg, editMode){
   if(!editMode){
     contentHtml += hasUrl ? buildSegPlayerHtml(dayNum, si, seg.url) : '';
     if(hasText){
-      const origLines  = (seg.text||'').split('\n').filter(l=>l.trim());
-      const transLines = (seg.translation||'').split('\n').filter(l=>l.trim());
-      const maxLen = Math.max(origLines.length, transLines.length);
-      let rows='';
-      for(let i=0;i<maxLen;i++){
-        rows+=`<div class="mat-seg-orig" style="padding:8px 12px;font-size:13px;line-height:1.7;background:var(--surface);border-right:1px solid var(--border);">${escHtml(origLines[i]||'')}</div><div class="mat-seg-trans" style="padding:8px 12px;font-size:13px;line-height:1.7;background:var(--surface2);color:var(--text2);">${escHtml(transLines[i]||'')}</div>`;
-      }
-      if(rows) contentHtml+=`
+      const origText  = escHtml(seg.text||'').replace(/\n/g,'<br>');
+      const transText = escHtml(seg.translation||'').replace(/\n/g,'<br>');
+      contentHtml+=`
         <div style="margin-top:10px;">
           <div class="mat-col-labels"><span>Иностранный текст</span><span>Перевод</span></div>
-          <div class="mat-segs-parallel show">${rows}</div>
+          <div class="mat-segs-parallel show">
+            <div class="mat-seg-orig" style="padding:10px 12px;font-size:13px;line-height:1.7;background:var(--surface);border-right:1px solid var(--border);">${origText}</div>
+            <div class="mat-seg-trans" style="padding:10px 12px;font-size:13px;line-height:1.7;background:var(--surface2);color:var(--text2);">${transText}</div>
+          </div>
         </div>`;
     }
     if(!hasUrl&&!hasText) contentHtml='<div class="mat-hint">Пусто — нажмите ✏️ чтобы добавить</div>';
@@ -4379,17 +4385,16 @@ function buildMatPanel(dayNum, mat, isOpen){
     </div>`;
 }
 
-// ── helper: count unique excerpts (А, Б, В...) in day groups ──
-function countDayExcerpts(dayNum){
+// ── helper: get ordered unique excerpt letters from day groups ──
+function getDayExcerptLetters(dayNum){
   const d = DAYS.find(d=>d.day===dayNum);
-  if(!d||!d.groups) return 1;
-  const found = new Set();
+  if(!d||!d.groups) return ['А'];
+  const found = [];
   d.groups.forEach(g=>{
-    // Match "Отрывок А", "Отрывок Б" etc in group title
     const m = g.title.match(/Отрывок\s+([А-ЯЁ])/);
-    if(m) found.add(m[1]);
+    if(m && !found.includes(m[1])) found.push(m[1]);
   });
-  return found.size > 0 ? found.size : 1;
+  return found.length > 0 ? found : ['А'];
 }
 
 // ── toggle panel ─────────────────────────────
@@ -4400,9 +4405,9 @@ function toggleMat(dayNum){
     openMaterials.add(dayNum);
     // Auto-init segments if none exist yet
     if(!state.materials[dayNum] || !state.materials[dayNum].segments || state.materials[dayNum].segments.length===0){
-      const count = countDayExcerpts(dayNum);
+      const letters = getDayExcerptLetters(dayNum);
       if(!state.materials[dayNum]) state.materials[dayNum]={};
-      state.materials[dayNum].segments = Array.from({length:count}, ()=>({url:'',text:'',translation:''}));
+      state.materials[dayNum].segments = letters.map(letter=>({url:'',text:'',translation:'',letter}));
       state.materials[dayNum]._editing = true;
       saveData();
     }
@@ -4422,7 +4427,8 @@ function matAddSeg(dayNum, e){
     if(mat.audioUrl||mat.text||mat.translation)
       mat.segments.push({url:mat.audioUrl||'',text:mat.text||'',translation:mat.translation||''});
   }
-  mat.segments.push({url:'',text:'',translation:''});
+  const si = mat.segments.length;
+  mat.segments.push({url:'',text:'',translation:'',letter: si < LETTERS.length ? LETTERS[si] : String(si+1)});
   mat._editing=true;
   saveData();
   openMaterials.add(dayNum);
