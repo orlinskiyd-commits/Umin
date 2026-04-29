@@ -377,6 +377,36 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:15
 .mat-edit-row{display:flex;justify-content:flex-end;gap:6px;margin-top:10px;}
 .mat-hint{font-family:var(--mono);font-size:10px;color:var(--text3);padding:8px 0;line-height:1.6;}
 
+/* ── SEGMENT BLOCK ── */
+.mat-seg-block{
+  border:1px solid var(--border);border-radius:6px;
+  margin-bottom:12px;overflow:hidden;
+}
+.mat-seg-block-head{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 12px;background:var(--surface2);
+  border-bottom:1px solid var(--border);
+}
+.mat-seg-block-letter{
+  font-family:var(--mono);font-size:12px;font-weight:700;
+  color:var(--gold);background:var(--gold-l);
+  padding:2px 8px;border-radius:3px;min-width:26px;text-align:center;
+}
+.mat-seg-block-title{font-family:var(--mono);font-size:10px;color:var(--text2);flex:1;}
+.mat-seg-block-del{
+  padding:2px 7px;border-radius:3px;border:1px solid transparent;
+  background:transparent;color:var(--text3);font-size:11px;cursor:pointer;
+  transition:all 0.15s;
+}
+.mat-seg-block-del:hover{background:var(--red-l);color:var(--red);border-color:var(--red);}
+.mat-seg-block-body{padding:12px;}
+.mat-add-btn{
+  width:100%;padding:8px;border-radius:5px;border:1px dashed var(--border2);
+  background:transparent;color:var(--text3);font-family:var(--mono);font-size:11px;
+  cursor:pointer;transition:all 0.15s;margin-bottom:10px;
+}
+.mat-add-btn:hover{border-color:var(--gold-dim);color:var(--gold);background:var(--gold-l);}
+
 /* ── DONE BLOCK ── */
 .done-block{padding:11px 16px;border-top:1px solid var(--border);background:var(--surface2);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
 .done-btn{
@@ -4204,163 +4234,144 @@ function detectUrlType(url){
   if(!url) return 'none';
   if(/vimeo\.com\/(\d+)/.test(url)) return 'vimeo';
   if(/youtube\.com|youtu\.be/.test(url)) return 'youtube';
-  return 'audio'; // direct file or Drive/Dropbox
+  return 'audio';
 }
+function getVimeoId(url){ const m=url.match(/vimeo\.com\/(\d+)/); return m?m[1]:null; }
+function getYouTubeId(url){ const m=url.match(/(?:v=|youtu\.be\/)([^&?\/]+)/); return m?m[1]:null; }
+function convertGDriveUrl(url){ const m=url.match(/drive\.google\.com\/file\/d\/([^\/\?]+)/); return m?`https://drive.google.com/uc?export=download&id=${m[1]}`:url; }
+function convertDropboxUrl(url){ if(url.includes('dropbox.com')) return url.replace(/[?&]dl=[01]/,'')+(url.includes('?')?'&raw=1':'?raw=1'); return url; }
+function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+const LETTERS = 'АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩ';
 
-function getVimeoId(url){
-  const m = url.match(/vimeo\.com\/(\d+)/);
-  return m ? m[1] : null;
-}
-
-function getYouTubeId(url){
-  const m = url.match(/(?:v=|youtu\.be\/)([^&?\/]+)/);
-  return m ? m[1] : null;
-}
-
-function convertGDriveUrl(url){
-  const m = url.match(/drive\.google\.com\/file\/d\/([^\/\?]+)/);
-  if(m) return `https://drive.google.com/uc?export=download&id=${m[1]}`;
-  return url;
-}
-
-function convertDropboxUrl(url){
-  if(url.includes('dropbox.com'))
-    return url.replace(/[?&]dl=[01]/,'') + (url.includes('?') ? '&raw=1' : '?raw=1');
-  return url;
-}
-
-function escHtml(s){
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-// ── build player HTML depending on type ──────
-function buildPlayerHtml(dayNum, url){
+// ── build player for one segment ─────────────
+function buildSegPlayerHtml(dayNum, si, url){
   const type = detectUrlType(url);
-  if(type === 'vimeo'){
-    const vid = getVimeoId(url);
-    if(!vid) return '<div class="mat-hint">⚠ Не удалось распознать Vimeo ID</div>';
-    return `
-      <div class="mat-player show" id="mat-player-${dayNum}" style="padding:0;background:none;border:none;">
-        <div style="position:relative;padding-bottom:56.25%;height:0;border-radius:6px;overflow:hidden;border:1px solid var(--border);">
-          <iframe id="mat-vimeo-${dayNum}"
-            src="https://player.vimeo.com/video/${vid}?badge=0&autopause=0&player_id=0&app_id=58479"
-            allow="autoplay; fullscreen; picture-in-picture"
-            style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;"
-            title="Vimeo player"></iframe>
-        </div>
-        <div class="mat-speed-row" style="margin-top:8px;">
-          <span class="mat-speed-label">Скорость (Vimeo API):</span>
-          ${[0.5,0.75,1,1.25,1.5].map(s=>`<button class="mat-speed-btn${s===1?' active':''}" onclick="matSpeedVimeo(${dayNum},${s},this,event)">${s}×</button>`).join('')}
-        </div>
-        <div class="mat-hint" style="margin-top:4px;">💡 Управление скоростью через Vimeo API. Если кнопки не реагируют — используйте встроенные настройки плеера (шестерёнка внутри видео).</div>
-      </div>`;
-  }
-  if(type === 'youtube'){
-    const vid = getYouTubeId(url);
-    if(!vid) return '<div class="mat-hint">⚠ Не удалось распознать YouTube ID</div>';
-    return `
-      <div class="mat-player show" id="mat-player-${dayNum}" style="padding:0;background:none;border:none;">
-        <div style="position:relative;padding-bottom:56.25%;height:0;border-radius:6px;overflow:hidden;border:1px solid var(--border);">
-          <iframe id="mat-yt-${dayNum}"
-            src="https://www.youtube.com/embed/${vid}?enablejsapi=1"
-            allow="autoplay; fullscreen"
-            style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;"
-            title="YouTube player"></iframe>
-        </div>
-        <div class="mat-hint" style="margin-top:6px;">💡 Для изменения скорости используйте ⚙ Настройки внутри плеера YouTube.</div>
-      </div>`;
-  }
-  // audio file
-  return `
-    <div class="mat-player show" id="mat-player-${dayNum}">
-      <audio id="mat-audio-${dayNum}" controls preload="none" src="${escHtml(url)}"></audio>
-      <div class="mat-speed-row">
-        <span class="mat-speed-label">Скорость:</span>
-        ${[0.5,0.65,0.75,1,1.25].map(s=>`<button class="mat-speed-btn${s===1?' active':''}" onclick="matSpeed(${dayNum},${s},this,event)">${s}×</button>`).join('')}
+  const pid = `mp-${dayNum}-${si}`;
+  if(type==='vimeo'){
+    const vid=getVimeoId(url); if(!vid) return '<div class="mat-hint">⚠ Не удалось распознать Vimeo ID</div>';
+    return `<div class="mat-player show" style="padding:0;background:none;border:none;">
+      <div style="position:relative;padding-bottom:56.25%;height:0;border-radius:6px;overflow:hidden;border:1px solid var(--border);">
+        <iframe id="${pid}" src="https://player.vimeo.com/video/${vid}?badge=0&autopause=0&player_id=0&app_id=58479"
+          allow="autoplay; fullscreen; picture-in-picture"
+          style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;" title="Vimeo"></iframe>
       </div>
+      <div class="mat-speed-row" style="margin-top:8px;">
+        <span class="mat-speed-label">Скорость:</span>
+        ${[0.5,0.75,1,1.25,1.5].map(s=>`<button class="mat-speed-btn${s===1?' active':''}" onclick="matSpeedVimeo('${pid}',${s},this,event)">${s}×</button>`).join('')}
+      </div>
+      <div class="mat-hint">💡 Скорость работает для Vimeo Pro+. Иначе — шестерёнка ⚙ внутри плеера.</div>
+    </div>`;
+  }
+  if(type==='youtube'){
+    const vid=getYouTubeId(url); if(!vid) return '<div class="mat-hint">⚠ Не удалось распознать YouTube ID</div>';
+    return `<div class="mat-player show" style="padding:0;background:none;border:none;">
+      <div style="position:relative;padding-bottom:56.25%;height:0;border-radius:6px;overflow:hidden;border:1px solid var(--border);">
+        <iframe id="${pid}" src="https://www.youtube.com/embed/${vid}?enablejsapi=1"
+          allow="autoplay; fullscreen"
+          style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;" title="YouTube"></iframe>
+      </div>
+      <div class="mat-hint" style="margin-top:6px;">💡 Скорость — через ⚙ внутри плеера YouTube.</div>
+    </div>`;
+  }
+  return `<div class="mat-player show">
+    <audio id="${pid}" controls preload="none" src="${escHtml(url)}" style="width:100%;height:32px;margin-bottom:8px;"></audio>
+    <div class="mat-speed-row">
+      <span class="mat-speed-label">Скорость:</span>
+      ${[0.5,0.65,0.75,1,1.25].map(s=>`<button class="mat-speed-btn${s===1?' active':''}" onclick="matSpeedAudio('${pid}',${s},this,event)">${s}×</button>`).join('')}
+    </div>
+  </div>`;
+}
+
+// ── build one segment block ───────────────────
+function buildSegBlock(dayNum, si, seg, editMode){
+  const letter = si < LETTERS.length ? LETTERS[si] : (si+1);
+  const hasUrl  = !!seg.url;
+  const hasText = !!(seg.text||seg.translation);
+
+  // read view
+  let contentHtml = '';
+  if(!editMode){
+    contentHtml += hasUrl ? buildSegPlayerHtml(dayNum, si, seg.url) : '';
+    if(hasText){
+      const origLines  = (seg.text||'').split('\n').filter(l=>l.trim());
+      const transLines = (seg.translation||'').split('\n').filter(l=>l.trim());
+      const maxLen = Math.max(origLines.length, transLines.length);
+      let rows='';
+      for(let i=0;i<maxLen;i++){
+        rows+=`<div class="mat-seg-orig" style="padding:8px 12px;font-size:13px;line-height:1.7;background:var(--surface);border-right:1px solid var(--border);">${escHtml(origLines[i]||'')}</div><div class="mat-seg-trans" style="padding:8px 12px;font-size:13px;line-height:1.7;background:var(--surface2);color:var(--text2);">${escHtml(transLines[i]||'')}</div>`;
+      }
+      if(rows) contentHtml+=`
+        <div style="margin-top:10px;">
+          <div class="mat-col-labels"><span>Иностранный текст</span><span>Перевод</span></div>
+          <div class="mat-segs-parallel show">${rows}</div>
+        </div>`;
+    }
+    if(!hasUrl&&!hasText) contentHtml='<div class="mat-hint">Пусто — нажмите ✏️ чтобы добавить</div>';
+  } else {
+    // edit view
+    contentHtml=`
+      <div class="mat-audio-row" style="margin-bottom:10px;">
+        <input type="text" class="mat-url-input" id="msurl-${dayNum}-${si}"
+          placeholder="Ссылка: Vimeo, YouTube, Google Drive, Dropbox, URL…"
+          value="${escHtml(seg.url||'')}">
+      </div>
+      <div class="mat-parallel">
+        <div>
+          <span class="mat-col-head">Иностранный текст</span>
+          <textarea class="mat-textarea" id="msorig-${dayNum}-${si}" placeholder="Текст отрывка…">${escHtml(seg.text||'')}</textarea>
+        </div>
+        <div>
+          <span class="mat-col-head">Перевод</span>
+          <textarea class="mat-textarea" id="mstrans-${dayNum}-${si}" placeholder="Перевод…">${escHtml(seg.translation||'')}</textarea>
+        </div>
+      </div>`;
+  }
+
+  return `
+    <div class="mat-seg-block" id="msblock-${dayNum}-${si}">
+      <div class="mat-seg-block-head">
+        <span class="mat-seg-block-letter">${letter}</span>
+        <span class="mat-seg-block-title">Отрывок ${letter}</span>
+        <button class="mat-seg-block-del" onclick="matDelSeg(${dayNum},${si},event)" title="Удалить отрывок">✕</button>
+      </div>
+      <div class="mat-seg-block-body">${contentHtml}</div>
     </div>`;
 }
 
 // ── build full materials panel ────────────────
 function buildMatPanel(dayNum, mat, isOpen){
-  const hasAudio   = !!mat.audioUrl;
-  const hasText    = !!(mat.text || mat.translation);
-  const hasContent = hasAudio || hasText;
-  const editMode   = !!(mat._editing);
-
-  // Player
-  const playerHtml = hasAudio ? buildPlayerHtml(dayNum, mat.audioUrl) : `
-    <div class="mat-player" id="mat-player-${dayNum}"></div>`;
-
-  // Segments read view
-  let segsHtml = '';
-  if(!editMode && hasText){
-    const origLines  = (mat.text||'').split('\n').filter(l=>l.trim());
-    const transLines = (mat.translation||'').split('\n').filter(l=>l.trim());
-    const maxLen = Math.max(origLines.length, transLines.length);
-    const letters = 'АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩ';
-    let rows = '';
-    for(let i=0;i<maxLen;i++){
-      const letter = i < letters.length ? letters[i] : (i+1);
-      rows += `<div class="mat-seg-orig"><span class="mat-seg-letter">${letter}</span>${escHtml(origLines[i]||'')}</div><div class="mat-seg-trans">${escHtml(transLines[i]||'')}</div>`;
+  // migrate old format (audioUrl/text/translation → segments[0])
+  if(!mat.segments){
+    mat.segments = [];
+    if(mat.audioUrl||mat.text||mat.translation){
+      mat.segments.push({url:mat.audioUrl||'', text:mat.text||'', translation:mat.translation||''});
     }
-    if(rows) segsHtml = `
-      <div class="mat-text-section">
-        <span class="mat-text-label">📖 Текст и перевод</span>
-        <div class="mat-col-labels"><span>Иностранный текст</span><span>Перевод</span></div>
-        <div class="mat-segs-parallel show">${rows}</div>
-      </div>`;
   }
+  const segs = mat.segments || [];
+  const hasContent = segs.length > 0;
+  const editMode = !!mat._editing;
 
-  // Edit form
-  let editHtml = '';
-  if(editMode || !hasContent){
-    editHtml = `
-      <div class="mat-text-section">
-        <span class="mat-text-label">📖 Текст урока (каждый отрывок — отдельная строка)</span>
-        <div class="mat-parallel">
-          <div>
-            <span class="mat-col-head">Иностранный текст</span>
-            <textarea class="mat-textarea" id="mat-orig-${dayNum}" placeholder="Отрывок А&#10;Отрывок Б&#10;Отрывок В&#10;...">${escHtml(mat.text||'')}</textarea>
-          </div>
-          <div>
-            <span class="mat-col-head">Перевод (строка в строку)</span>
-            <textarea class="mat-textarea" id="mat-trans-${dayNum}" placeholder="Перевод А&#10;Перевод Б&#10;Перевод В&#10;...">${escHtml(mat.translation||'')}</textarea>
-          </div>
-        </div>
-      </div>`;
-  }
+  const segsHtml = segs.map((seg,si)=>buildSegBlock(dayNum,si,seg,editMode)).join('');
 
-  const urlType = detectUrlType(mat.audioUrl||'');
-  const urlPlaceholder = urlType==='vimeo'
-    ? 'Ссылка сохранена (Vimeo). Вставьте новую чтобы заменить.'
-    : 'Ссылка: Vimeo, YouTube, Google Drive, Dropbox, прямой URL…';
+  const addBtn = `<button class="mat-add-btn" onclick="matAddSeg(${dayNum},event)">+ Добавить отрывок</button>`;
 
   const editBtnHtml  = hasContent && !editMode ? `<button class="mat-btn" onclick="matEdit(${dayNum},event)">✏️ Редактировать</button>` : '';
-  const saveBtnHtml  = (editMode || !hasContent) ? `<button class="mat-btn" onclick="matSave(${dayNum},event)">💾 Сохранить</button>` : '';
+  const saveBtnHtml  = editMode ? `<button class="mat-btn" onclick="matSave(${dayNum},event)">💾 Сохранить</button>` : '';
   const clearBtnHtml = hasContent ? `<button class="mat-btn danger" onclick="matClear(${dayNum},event)">✕ Очистить всё</button>` : '';
+
+  const badgeCount = segs.length > 0 ? `<span class="mat-badge">${segs.length} отр.</span>` : '';
 
   return `
     <div class="mat-section" id="mat-section-${dayNum}">
       <div class="mat-header" onclick="toggleMat(${dayNum})">
         <span class="mat-icon">🎧</span>
         <span class="mat-title">Материалы урока</span>
-        ${hasContent?`<span class="mat-badge">${urlType==='vimeo'?'Vimeo':urlType==='youtube'?'YouTube':hasAudio?'аудио':'текст'}</span>`:''}
+        ${badgeCount}
         <span class="mat-chev${isOpen?' open':''}" id="mat-chev-${dayNum}">▾</span>
       </div>
       <div class="mat-body${isOpen?' open':''}" id="mat-body-${dayNum}">
-
-        <div class="mat-audio-row">
-          <input type="text" class="mat-url-input" id="mat-url-${dayNum}"
-            placeholder="${urlPlaceholder}"
-            value="${escHtml(mat.audioUrl||'')}">
-          <button class="mat-btn" onclick="matLoadMedia(${dayNum},event)">▶ Загрузить</button>
-        </div>
-
-        ${playerHtml}
         ${segsHtml}
-        ${editHtml}
-
+        ${addBtn}
         <div class="mat-edit-row">
           ${editBtnHtml}${saveBtnHtml}${clearBtnHtml}
         </div>
@@ -4375,49 +4386,65 @@ function toggleMat(dayNum){
   buildDays();
 }
 
-// ── load / save ───────────────────────────────
-function matLoadMedia(dayNum, e){
+// ── add / delete segment ──────────────────────
+function matAddSeg(dayNum, e){
   e.stopPropagation();
-  const inp = document.getElementById('mat-url-'+dayNum);
-  if(!inp) return;
-  let url = inp.value.trim();
-  if(!url){ alert('Вставьте ссылку'); return; }
-
-  // Normalise known hosts
-  const type = detectUrlType(url);
-  if(type === 'audio'){
-    url = convertGDriveUrl(url);
-    url = convertDropboxUrl(url);
-  }
-
   if(!state.materials[dayNum]) state.materials[dayNum]={};
-  state.materials[dayNum].audioUrl = url;
+  if(!state.materials[dayNum].segments) state.materials[dayNum].segments=[];
+  // migrate if needed
+  const mat=state.materials[dayNum];
+  if(!mat.segments){
+    mat.segments=[];
+    if(mat.audioUrl||mat.text||mat.translation)
+      mat.segments.push({url:mat.audioUrl||'',text:mat.text||'',translation:mat.translation||''});
+  }
+  mat.segments.push({url:'',text:'',translation:''});
+  mat._editing=true;
   saveData();
   openMaterials.add(dayNum);
-  buildDays(); // rebuild — buildPlayerHtml will pick correct type
+  buildDays();
 }
 
+function matDelSeg(dayNum, si, e){
+  e.stopPropagation();
+  const mat=state.materials[dayNum];
+  if(!mat||!mat.segments) return;
+  if(!confirm(`Удалить отрывок ${LETTERS[si]||si+1}?`)) return;
+  mat.segments.splice(si,1);
+  if(mat.segments.length===0) delete state.materials[dayNum];
+  saveData();
+  openMaterials.add(dayNum);
+  buildDays();
+}
+
+// ── edit / save ───────────────────────────────
 function matEdit(dayNum, e){
   e.stopPropagation();
   if(!state.materials[dayNum]) state.materials[dayNum]={};
-  state.materials[dayNum]._editing = true;
+  state.materials[dayNum]._editing=true;
   openMaterials.add(dayNum);
   buildDays();
 }
 
 function matSave(dayNum, e){
   e.stopPropagation();
-  if(!state.materials[dayNum]) state.materials[dayNum]={};
-  const orig  = document.getElementById('mat-orig-'+dayNum);
-  const trans = document.getElementById('mat-trans-'+dayNum);
-  // also grab url field in case user typed but didn't click Загрузить
-  const inp = document.getElementById('mat-url-'+dayNum);
-  if(inp && inp.value.trim() && !state.materials[dayNum].audioUrl){
-    state.materials[dayNum].audioUrl = inp.value.trim();
-  }
-  state.materials[dayNum].text        = orig  ? orig.value.trim()  : '';
-  state.materials[dayNum].translation = trans ? trans.value.trim() : '';
-  delete state.materials[dayNum]._editing;
+  const mat=state.materials[dayNum];
+  if(!mat) return;
+  const segs=mat.segments||[];
+  segs.forEach((seg,si)=>{
+    const urlEl   = document.getElementById(`msurl-${dayNum}-${si}`);
+    const origEl  = document.getElementById(`msorig-${dayNum}-${si}`);
+    const transEl = document.getElementById(`mstrans-${dayNum}-${si}`);
+    if(urlEl){
+      let url=urlEl.value.trim();
+      const type=detectUrlType(url);
+      if(type==='audio'){ url=convertGDriveUrl(url); url=convertDropboxUrl(url); }
+      seg.url=url;
+    }
+    if(origEl)  seg.text=origEl.value.trim();
+    if(transEl) seg.translation=transEl.value.trim();
+  });
+  delete mat._editing;
   saveData();
   openMaterials.add(dayNum);
   buildDays();
@@ -4433,44 +4460,43 @@ function matClear(dayNum, e){
 }
 
 // ── speed controls ────────────────────────────
-function matSpeed(dayNum, speed, btn, e){
+function matSpeedAudio(pid, speed, btn, e){
   e.stopPropagation();
-  const audio = document.getElementById('mat-audio-'+dayNum);
-  if(audio) audio.playbackRate = speed;
+  const audio=document.getElementById(pid);
+  if(audio) audio.playbackRate=speed;
   btn.closest('.mat-speed-row').querySelectorAll('.mat-speed-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
 }
 
-// Vimeo Player API (loaded on demand)
-let vimeoApiReady = false;
+let vimeoApiReady=false;
 function ensureVimeoApi(cb){
-  if(window.Vimeo){ cb(); return; }
-  if(vimeoApiReady){ cb(); return; }
-  const s = document.createElement('script');
-  s.src = 'https://player.vimeo.com/api/player.js';
-  s.onload = ()=>{ vimeoApiReady=true; cb(); };
+  if(window.Vimeo){cb();return;}
+  if(vimeoApiReady){cb();return;}
+  const s=document.createElement('script');
+  s.src='https://player.vimeo.com/api/player.js';
+  s.onload=()=>{vimeoApiReady=true;cb();};
   document.head.appendChild(s);
 }
 
-function matSpeedVimeo(dayNum, speed, btn, e){
+function matSpeedVimeo(pid, speed, btn, e){
   e.stopPropagation();
   ensureVimeoApi(()=>{
-    const iframe = document.getElementById('mat-vimeo-'+dayNum);
-    if(!iframe){ return; }
+    const iframe=document.getElementById(pid);
+    if(!iframe) return;
     try{
-      const player = new Vimeo.Player(iframe);
+      const player=new Vimeo.Player(iframe);
       player.setPlaybackRate(speed).catch(err=>{
-        // Vimeo only allows speed control on Vimeo PRO+ videos
-        console.warn('Vimeo speed error:', err);
-        alert('Изменение скорости доступно только для видео с Vimeo Pro/Plus/Business аккаунтов. Используйте настройки внутри плеера (шестерёнка ⚙).');
+        alert('Изменение скорости доступно только для Vimeo Pro/Plus/Business. Используйте ⚙ внутри плеера.');
       });
-    }catch(err){ console.warn(err); }
+    }catch(err){console.warn(err);}
   });
   btn.closest('.mat-speed-row').querySelectorAll('.mat-speed-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
 }
 
-// restoreAudio — no-op now since player rebuilt on open
+// matSpeed legacy alias
+function matSpeed(d,s,btn,e){ matSpeedAudio('mat-audio-'+d,s,btn,e); }
+
 function restoreAudio(){}
 
 // ════════════════════════════════════════════
