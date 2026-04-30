@@ -4344,12 +4344,8 @@ function buildSegBlock(dayNum, si, seg, _unused){
           <textarea class="mat-textarea" id="msorig-${dayNum}-${si}" placeholder="Текст отрывка…">${escHtml(seg.text||'')}</textarea>
         </div>
         ${showTrans ? `<div>
-          <span class="mat-col-head" style="display:flex;align-items:center;justify-content:space-between;">
-            Перевод
-            <button class="mat-btn" style="padding:2px 8px;font-size:11px;margin-left:8px;" onclick="aiTranslate(${dayNum},${si},event)">🤖 Перевести</button>
-          </span>
+          <span class="mat-col-head">Перевод</span>
           <textarea class="mat-textarea" id="mstrans-${dayNum}-${si}" placeholder="Перевод…">${escHtml(seg.translation||'')}</textarea>
-          <div id="ai-trans-status-${dayNum}-${si}" style="font-size:11px;color:var(--text2);margin-top:4px;display:none;"></div>
         </div>` : ''}
       </div>` : '';
     contentHtml=`
@@ -4485,8 +4481,8 @@ function toggleMat(dayNum){
         return {
           letter,
           url: inherited ? inherited.url : '',
-          text: (needText && inherited) ? inherited.text : (needText ? '' : null),
-          translation: (needTranslation && inherited) ? inherited.translation : (needTranslation ? '' : null),
+          text: needText ? (inherited && inherited.text != null ? inherited.text : '') : null,
+          translation: needTranslation ? (inherited && inherited.translation != null ? inherited.translation : '') : null,
           // open in edit mode only if no inherited data
           _editing: !hasInheritedData,
         };
@@ -4583,7 +4579,16 @@ function matSaveSeg(dayNum, si, e){
     seg.url = url;
   }
   if(origEl)  seg.text = origEl.value.trim();
+  else if(seg.text === null){
+    // field not shown - re-evaluate if it should exist now based on lesson requirements
+    const {needText, needTranslation} = getExcerptFields(dayNum, seg.letter || (si < LETTERS.length ? LETTERS[si] : String(si+1)));
+    if(needText) seg.text = '';
+  }
   if(transEl) seg.translation = transEl.value.trim();
+  else if(seg.translation === null){
+    const {needText, needTranslation} = getExcerptFields(dayNum, seg.letter || (si < LETTERS.length ? LETTERS[si] : String(si+1)));
+    if(needTranslation) seg.translation = '';
+  }
   delete seg._editing;
   saveData();
   openMaterials.add(dayNum);
@@ -4597,47 +4602,6 @@ function matClear(dayNum, e){
   openMaterials.delete(dayNum);
   saveData();
   buildDays();
-}
-
-// ── AI translation ────────────────────────────
-async function aiTranslate(dayNum, si, e){
-  e.stopPropagation();
-  const origEl   = document.getElementById(`msorig-${dayNum}-${si}`);
-  const transEl  = document.getElementById(`mstrans-${dayNum}-${si}`);
-  const statusEl = document.getElementById(`ai-trans-status-${dayNum}-${si}`);
-  if(!origEl || !transEl) return;
-  const text = origEl.value.trim();
-  if(!text){ alert('Сначала введите иностранный текст.'); return; }
-
-  statusEl.style.display = 'block';
-  statusEl.textContent = '⏳ Перевожу…';
-  transEl.disabled = true;
-
-  try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        system: 'Ты профессиональный переводчик. Переводи текст с английского на русский точно, сохраняя структуру абзацев и разбивку на фразы. Возвращай ТОЛЬКО перевод, без пояснений и вступлений.',
-        messages: [{ role: 'user', content: `Переведи на русский:\n\n${text}` }]
-      })
-    });
-    const data = await resp.json();
-    const translation = data.content && data.content[0] && data.content[0].text;
-    if(translation){
-      transEl.value = translation;
-      statusEl.textContent = '✅ Перевод готов — проверьте и сохраните.';
-      setTimeout(()=>{ statusEl.style.display='none'; }, 3000);
-    } else {
-      statusEl.textContent = '⚠ Ошибка: ' + (data.error && data.error.message || 'неизвестная ошибка');
-    }
-  } catch(err){
-    statusEl.textContent = '⚠ Ошибка сети: ' + err.message;
-  } finally {
-    transEl.disabled = false;
-  }
 }
 
 
