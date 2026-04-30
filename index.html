@@ -4299,35 +4299,40 @@ function buildSegPlayerHtml(dayNum, si, url){
 function buildSegBlock(dayNum, si, seg, _unused){
   const letter = seg.letter || (si < LETTERS.length ? LETTERS[si] : (si+1));
   const hasUrl  = !!seg.url;
-  const hasText = seg.text !== null && !!(seg.text || seg.translation);
+  const needsText  = seg.text !== null;        // field exists (even if empty)
+  const needsTrans = seg.translation !== null; // field exists (even if empty)
+  const hasText    = needsText && !!(seg.text || seg.translation);
   const editMode = !!seg._editing;
 
   // read view
   let contentHtml = '';
   if(!editMode){
     contentHtml += hasUrl ? buildSegPlayerHtml(dayNum, si, seg.url) : '';
-    if(hasText){
+
+    if(needsText){
       const origText  = escHtml(seg.text||'').replace(/\n/g,'<br>');
       const transText = escHtml(seg.translation||'').replace(/\n/g,'<br>');
-      const hasTransCol = seg.translation !== null;
-      if(hasTransCol){
+
+      if(needsTrans){
         contentHtml+=`
           <div style="margin-top:10px;">
             <div class="mat-col-labels"><span>Иностранный текст</span><span>Перевод</span></div>
             <div class="mat-segs-parallel show">
-              <div class="mat-seg-orig" style="padding:10px 12px;font-size:13px;line-height:1.7;background:var(--surface);border-right:1px solid var(--border);">${origText}</div>
-              <div class="mat-seg-trans" style="padding:10px 12px;font-size:13px;line-height:1.7;background:var(--surface2);color:var(--text2);">${transText}</div>
+              <div class="mat-seg-orig" style="padding:10px 12px;font-size:13px;line-height:1.7;background:var(--surface);border-right:1px solid var(--border);min-height:48px;">${origText}</div>
+              <div class="mat-seg-trans" style="padding:10px 12px;font-size:13px;line-height:1.7;background:var(--surface2);color:var(--text2);min-height:48px;">${transText}</div>
             </div>
           </div>`;
       } else {
         contentHtml+=`
           <div style="margin-top:10px;">
             <div class="mat-col-labels"><span>Иностранный текст</span></div>
-            <div style="padding:10px 12px;font-size:13px;line-height:1.7;background:var(--surface);border-radius:6px;">${origText}</div>
+            <div style="padding:10px 12px;font-size:13px;line-height:1.7;background:var(--surface);border-radius:6px;min-height:48px;">${origText}</div>
           </div>`;
       }
     }
-    if(!hasUrl&&!hasText) contentHtml='<div class="mat-hint">Пусто — нажмите ✏️ чтобы добавить</div>';
+
+    if(!hasUrl && !needsText) contentHtml='<div class="mat-hint">Пусто — нажмите ✏️ чтобы добавить</div>';
+    else if(!hasUrl && needsText && !seg.url) contentHtml = `<div class="mat-hint" style="margin-bottom:6px;">Нажмите ✏️ чтобы добавить ссылку</div>` + contentHtml;
   } else {
     // edit view
     const showText = seg.text !== null;
