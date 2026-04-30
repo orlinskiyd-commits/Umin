@@ -4442,7 +4442,12 @@ function inheritSegment(dayNum, letter){
     if(!prevLetters.includes(letter)) continue;
     const prevMat = state.materials && state.materials[d];
     if(!prevMat || !prevMat.segments) continue;
-    const seg = prevMat.segments.find(s=>s.letter===letter);
+    // Find by letter field, or fall back to index position
+    let seg = prevMat.segments.find(s=>s.letter===letter);
+    if(!seg){
+      const idx = prevLetters.indexOf(letter);
+      if(idx >= 0 && idx < prevMat.segments.length) seg = prevMat.segments[idx];
+    }
     if(seg && (seg.url || seg.text || seg.translation)){
       return {url: seg.url||'', text: seg.text||'', translation: seg.translation||''};
     }
