@@ -3811,7 +3811,8 @@ function buildDays(){
         const steps = g.steps.map((s,si)=>{
           const stepKey = `${d.day}_${g.n}_${si}`;
           const isChecked = !!(state.stepsDone && state.stepsDone[stepKey]);
-          if(noCheck || !s.note){
+          const isTip = noCheck || (!s.note && !/\(Л\d+\)/.test(s.t||''));
+          if(isTip){
             return `
             <div class="step-item tip-item" id="si-${stepKey}">
               <span class="step-dot">●</span>
@@ -3828,7 +3829,7 @@ function buildDays(){
           </div>`;
         }).join('');
         const noCheckGroup = !g.badge;
-        const checkableSteps = noCheckGroup ? [] : g.steps.map((s,si)=>({s,si})).filter(({s})=>s.note);
+        const checkableSteps = noCheckGroup ? [] : g.steps.map((s,si)=>({s,si})).filter(({s})=>s.note || /\(Л\d+\)/.test(s.t||''));
         const totalSteps = checkableSteps.length;
         const doneSteps = checkableSteps.filter(({si})=>state.stepsDone && state.stepsDone[`${d.day}_${g.n}_${si}`]).length;
         const pct = totalSteps > 0 ? Math.round(doneSteps/totalSteps*100) : 0;
@@ -4222,7 +4223,7 @@ function toggleStep(key, dayNum, e){
   const gn = parts[1];
   const g = d.groups.find(g=>g.n===gn);
   if(!g) return;
-  const checkableSteps = g.badge ? g.steps.map((s,si)=>({s,si})).filter(({s})=>s.note) : [];
+  const checkableSteps = g.badge ? g.steps.map((s,si)=>({s,si})).filter(({s})=>s.note || /\(Л\d+\)/.test(s.t||'')) : [];
   const totalSteps = checkableSteps.length;
   const doneSteps = checkableSteps.filter(({si})=>state.stepsDone && state.stepsDone[`${dayNum}_${gn}_${si}`]).length;
   const pct = totalSteps > 0 ? Math.round(doneSteps/totalSteps*100) : 0;
@@ -4295,10 +4296,11 @@ function buildSegPlayerHtml(dayNum, si, url){
 }
 
 // ── build one segment block ───────────────────
-function buildSegBlock(dayNum, si, seg, editMode){
+function buildSegBlock(dayNum, si, seg, _unused){
   const letter = seg.letter || (si < LETTERS.length ? LETTERS[si] : (si+1));
   const hasUrl  = !!seg.url;
   const hasText = seg.text !== null && !!(seg.text || seg.translation);
+  const editMode = !!seg._editing;
 
   // read view
   let contentHtml = '';
@@ -4337,8 +4339,12 @@ function buildSegBlock(dayNum, si, seg, editMode){
           <textarea class="mat-textarea" id="msorig-${dayNum}-${si}" placeholder="Текст отрывка…">${escHtml(seg.text||'')}</textarea>
         </div>
         ${showTrans ? `<div>
-          <span class="mat-col-head">Перевод</span>
+          <span class="mat-col-head" style="display:flex;align-items:center;justify-content:space-between;">
+            Перевод
+            <button class="mat-btn" style="padding:2px 8px;font-size:11px;margin-left:8px;" onclick="aiTranslate(${dayNum},${si},event)">🤖 Перевести</button>
+          </span>
           <textarea class="mat-textarea" id="mstrans-${dayNum}-${si}" placeholder="Перевод…">${escHtml(seg.translation||'')}</textarea>
+          <div id="ai-trans-status-${dayNum}-${si}" style="font-size:11px;color:var(--text2);margin-top:4px;display:none;"></div>
         </div>` : ''}
       </div>` : '';
     contentHtml=`
@@ -4350,12 +4356,19 @@ function buildSegBlock(dayNum, si, seg, editMode){
       ${textHtml}`;
   }
 
+  const editBtn = !editMode
+    ? `<button class="mat-btn" style="padding:3px 10px;font-size:11px;" onclick="matEditSeg(${dayNum},${si},event)">✏️</button>`
+    : `<button class="mat-btn" style="padding:3px 10px;font-size:11px;" onclick="matSaveSeg(${dayNum},${si},event)">💾 Сохранить</button>`;
+
   return `
     <div class="mat-seg-block" id="msblock-${dayNum}-${si}">
       <div class="mat-seg-block-head">
         <span class="mat-seg-block-letter">${letter}</span>
         <span class="mat-seg-block-title">Отрывок ${letter}</span>
-        <button class="mat-seg-block-del" onclick="matDelSeg(${dayNum},${si},event)" title="Удалить отрывок">✕</button>
+        <div style="display:flex;gap:6px;margin-left:auto;">
+          ${editBtn}
+          <button class="mat-seg-block-del" onclick="matDelSeg(${dayNum},${si},event)" title="Удалить отрывок">✕</button>
+        </div>
       </div>
       <div class="mat-seg-block-body">${contentHtml}</div>
     </div>`;
@@ -4372,14 +4385,11 @@ function buildMatPanel(dayNum, mat, isOpen){
   }
   const segs = mat.segments || [];
   const hasContent = segs.length > 0;
-  const editMode = !!mat._editing;
 
-  const segsHtml = segs.map((seg,si)=>buildSegBlock(dayNum,si,seg,editMode)).join('');
+  const segsHtml = segs.map((seg,si)=>buildSegBlock(dayNum,si,seg)).join('');
 
   const addBtn = `<button class="mat-add-btn" onclick="matAddSeg(${dayNum},event)">+ Добавить отрывок</button>`;
 
-  const editBtnHtml  = hasContent && !editMode ? `<button class="mat-btn" onclick="matEdit(${dayNum},event)">✏️ Редактировать</button>` : '';
-  const saveBtnHtml  = editMode ? `<button class="mat-btn" onclick="matSave(${dayNum},event)">💾 Сохранить</button>` : '';
   const clearBtnHtml = hasContent ? `<button class="mat-btn danger" onclick="matClear(${dayNum},event)">✕ Очистить всё</button>` : '';
 
   const badgeCount = segs.length > 0 ? `<span class="mat-badge">${segs.length} отр.</span>` : '';
@@ -4396,7 +4406,7 @@ function buildMatPanel(dayNum, mat, isOpen){
         ${segsHtml}
         ${addBtn}
         <div class="mat-edit-row">
-          ${editBtnHtml}${saveBtnHtml}${clearBtnHtml}
+          ${clearBtnHtml}
         </div>
       </div>
     </div>`;
@@ -4423,12 +4433,10 @@ function getExcerptFields(dayNum, letter){
   let needText = false, needTranslation = false;
   groups.forEach(g=>{
     g.steps.forEach(s=>{
-      // Check only the note (e.g. "Приём Л2", "Приём Л3") and explicit (Л2) markers in step text
-      const note = s.note||'';
-      const stepMarkers = (s.t||'').match(/\(Л\d+\)/g)||[];
-      const allMarkers = note + ' ' + stepMarkers.join(' ');
-      if(/Л2/.test(allMarkers)) needText = true;
-      if(/Л3|Л4/.test(allMarkers)) { needText = true; needTranslation = true; }
+      // Check note field AND inline (ЛN) markers in step text
+      const allText = (s.note||'') + ' ' + (s.t||'');
+      if(/Л2/.test(allText)) needText = true;
+      if(/Л3|Л4/.test(allText)) { needText = true; needTranslation = true; }
     });
   });
   return {needText, needTranslation};
@@ -4468,14 +4476,16 @@ function toggleMat(dayNum){
       state.materials[dayNum].segments = letters.map(letter=>{
         const {needText, needTranslation} = getExcerptFields(dayNum, letter);
         const inherited = inheritSegment(dayNum, letter);
+        const hasInheritedData = inherited && (inherited.url || inherited.text || inherited.translation);
         return {
           letter,
           url: inherited ? inherited.url : '',
           text: (needText && inherited) ? inherited.text : (needText ? '' : null),
           translation: (needTranslation && inherited) ? inherited.translation : (needTranslation ? '' : null),
+          // open in edit mode only if no inherited data
+          _editing: !hasInheritedData,
         };
       });
-      state.materials[dayNum]._editing = true;
       saveData();
     } else {
       // Fix existing segments: update null fields based on current lesson requirements
@@ -4523,8 +4533,8 @@ function matAddSeg(dayNum, e){
       mat.segments.push({url:mat.audioUrl||'',text:mat.text||'',translation:mat.translation||''});
   }
   const si = mat.segments.length;
-  mat.segments.push({url:'',text:'',translation:'',letter: si < LETTERS.length ? LETTERS[si] : String(si+1)});
-  mat._editing=true;
+  const {needText, needTranslation} = getExcerptFields(dayNum, si < LETTERS.length ? LETTERS[si] : String(si+1));
+  mat.segments.push({url:'', text: needText ? '' : null, translation: needTranslation ? '' : null, letter: si < LETTERS.length ? LETTERS[si] : String(si+1), _editing: true});
   saveData();
   openMaterials.add(dayNum);
   buildDays();
@@ -4542,35 +4552,34 @@ function matDelSeg(dayNum, si, e){
   buildDays();
 }
 
-// ── edit / save ───────────────────────────────
-function matEdit(dayNum, e){
+// ── per-segment edit / save ───────────────────
+function matEditSeg(dayNum, si, e){
   e.stopPropagation();
-  if(!state.materials[dayNum]) state.materials[dayNum]={};
-  state.materials[dayNum]._editing=true;
+  const mat = state.materials[dayNum];
+  if(!mat||!mat.segments||!mat.segments[si]) return;
+  mat.segments[si]._editing = true;
+  saveData();
   openMaterials.add(dayNum);
   buildDays();
 }
 
-function matSave(dayNum, e){
+function matSaveSeg(dayNum, si, e){
   e.stopPropagation();
-  const mat=state.materials[dayNum];
-  if(!mat) return;
-  const segs=mat.segments||[];
-  segs.forEach((seg,si)=>{
-    const urlEl   = document.getElementById(`msurl-${dayNum}-${si}`);
-    const origEl  = document.getElementById(`msorig-${dayNum}-${si}`);
-    const transEl = document.getElementById(`mstrans-${dayNum}-${si}`);
-    if(urlEl){
-      let url=urlEl.value.trim();
-      const type=detectUrlType(url);
-      if(type==='audio'){ url=convertGDriveUrl(url); url=convertDropboxUrl(url); }
-      seg.url=url;
-    }
-    if(origEl)  seg.text=origEl.value.trim();
-    // if field is null (not needed for this lesson) - keep it null, don't overwrite
-    if(transEl) seg.translation=transEl.value.trim();
-  });
-  delete mat._editing;
+  const mat = state.materials[dayNum];
+  if(!mat||!mat.segments||!mat.segments[si]) return;
+  const seg = mat.segments[si];
+  const urlEl   = document.getElementById(`msurl-${dayNum}-${si}`);
+  const origEl  = document.getElementById(`msorig-${dayNum}-${si}`);
+  const transEl = document.getElementById(`mstrans-${dayNum}-${si}`);
+  if(urlEl){
+    let url = urlEl.value.trim();
+    const type = detectUrlType(url);
+    if(type==='audio'){ url=convertGDriveUrl(url); url=convertDropboxUrl(url); }
+    seg.url = url;
+  }
+  if(origEl)  seg.text = origEl.value.trim();
+  if(transEl) seg.translation = transEl.value.trim();
+  delete seg._editing;
   saveData();
   openMaterials.add(dayNum);
   buildDays();
@@ -4585,7 +4594,48 @@ function matClear(dayNum, e){
   buildDays();
 }
 
-// ── speed controls ────────────────────────────
+// ── AI translation ────────────────────────────
+async function aiTranslate(dayNum, si, e){
+  e.stopPropagation();
+  const origEl   = document.getElementById(`msorig-${dayNum}-${si}`);
+  const transEl  = document.getElementById(`mstrans-${dayNum}-${si}`);
+  const statusEl = document.getElementById(`ai-trans-status-${dayNum}-${si}`);
+  if(!origEl || !transEl) return;
+  const text = origEl.value.trim();
+  if(!text){ alert('Сначала введите иностранный текст.'); return; }
+
+  statusEl.style.display = 'block';
+  statusEl.textContent = '⏳ Перевожу…';
+  transEl.disabled = true;
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        system: 'Ты профессиональный переводчик. Переводи текст с английского на русский точно, сохраняя структуру абзацев и разбивку на фразы. Возвращай ТОЛЬКО перевод, без пояснений и вступлений.',
+        messages: [{ role: 'user', content: `Переведи на русский:\n\n${text}` }]
+      })
+    });
+    const data = await resp.json();
+    const translation = data.content && data.content[0] && data.content[0].text;
+    if(translation){
+      transEl.value = translation;
+      statusEl.textContent = '✅ Перевод готов — проверьте и сохраните.';
+      setTimeout(()=>{ statusEl.style.display='none'; }, 3000);
+    } else {
+      statusEl.textContent = '⚠ Ошибка: ' + (data.error && data.error.message || 'неизвестная ошибка');
+    }
+  } catch(err){
+    statusEl.textContent = '⚠ Ошибка сети: ' + err.message;
+  } finally {
+    transEl.disabled = false;
+  }
+}
+
+
 function matSpeedAudio(pid, speed, btn, e){
   e.stopPropagation();
   const audio=document.getElementById(pid);
