@@ -4384,6 +4384,35 @@ function buildMatPanel(dayNum, mat, isOpen){
       mat.segments.push({url:mat.audioUrl||'', text:mat.text||'', translation:mat.translation||''});
     }
   }
+
+  // Sync: add any missing letters from lesson definition
+  const requiredLetters = getDayExcerptLetters(dayNum);
+  const existingLetters = mat.segments.map(s=>s.letter).filter(Boolean);
+  let syncChanged = false;
+  // Assign missing letters by index to old segments without letter
+  mat.segments.forEach((seg,si)=>{
+    if(!seg.letter && requiredLetters[si]){
+      seg.letter = requiredLetters[si];
+      syncChanged = true;
+    }
+  });
+  // Add segments for letters not yet present
+  requiredLetters.forEach(letter=>{
+    if(!mat.segments.find(s=>s.letter===letter)){
+      const {needText, needTranslation} = getExcerptFields(dayNum, letter);
+      const inherited = inheritSegment(dayNum, letter);
+      const hasInheritedData = inherited && (inherited.url || inherited.text || inherited.translation);
+      mat.segments.push({
+        letter,
+        url: inherited ? inherited.url : '',
+        text: needText ? (inherited && inherited.text != null ? inherited.text : '') : null,
+        translation: needTranslation ? (inherited && inherited.translation != null ? inherited.translation : '') : null,
+        _editing: !hasInheritedData,
+      });
+      syncChanged = true;
+    }
+  });
+  if(syncChanged) saveData();
   const segs = mat.segments || [];
   const hasContent = segs.length > 0;
 
@@ -4414,15 +4443,59 @@ function buildMatPanel(dayNum, mat, isOpen){
 }
 
 // ── helper: get ordered unique excerpt letters from day groups ──
+// ── helper: extract excerpt letters from a group title ──
+// handles "Отрывок А", "Отрывки К и Л", "Отрывки В, Г, Д"
+function extractLettersFromTitle(title){
+  const letters = [];
+  // Check for plural "Отрывки К и Л", "Отрывки В, Г, Д"
+  const pluralM = title.match(/Отрывки\s+([\sА-ЯЁа-яё,]+)/);
+  if(pluralM){
+    const parts = pluralM[1].split(/[\s,]+/);
+    parts.forEach(p=>{
+      if(/^[А-ЯЁ]$/.test(p)){
+        if(!letters.includes(p)) letters.push(p);
+      }
+    });
+    return letters;
+  }
+  // Sub-excerpt "Подотрывок А1", "Подотрывок Б2" → base letter А, Б etc
+  const subM = title.match(/Подотрывок\s+([А-ЯЁ])\d/);
+  if(subM){ letters.push(subM[1]); return letters; }
+  // Singular "Отрывок А"
+  const singleM = title.match(/Отрывок\s+([А-ЯЁ])/);
+  if(singleM) letters.push(singleM[1]);
+  return letters;
+}
+
 function getDayExcerptLetters(dayNum){
   const d = DAYS.find(d=>d.day===dayNum);
   if(!d||!d.groups) return ['А'];
-  const found = [];
+  const allFound = [];
+  const subOnlyLetters = new Set(); // letters that appear ONLY in Подотрывок groups
+  const fullLetters = new Set();    // letters that appear in full Отрывок groups
+
   d.groups.forEach(g=>{
-    const m = g.title.match(/Отрывок\s+([А-ЯЁ])/);
-    if(m && !found.includes(m[1])) found.push(m[1]);
+    const letters = extractLettersFromTitle(g.title);
+    const isSub = /Подотрывок/.test(g.title);
+    letters.forEach(l=>{
+      if(!allFound.includes(l)) allFound.push(l);
+      if(isSub) subOnlyLetters.add(l);
+      else fullLetters.add(l);
+    });
   });
-  return found.length > 0 ? found : ['А'];
+
+  // Filter: keep letter if it has a full Отрывок group, OR if it's new (not in any previous lesson)
+  return allFound.filter(l=>{
+    if(fullLetters.has(l)) return true; // has explicit Отрывок group
+    // Only in Подотрывок — skip if this letter existed in a previous lesson
+    for(let pd = dayNum-1; pd >= 1; pd--){
+      const prev = DAYS.find(dd=>dd.day===pd);
+      if(!prev||!prev.groups) continue;
+      const prevFull = prev.groups.some(g=> !(/Подотрывок/.test(g.title)) && extractLettersFromTitle(g.title).includes(l));
+      if(prevFull) return false; // it's a repeat/practice, not new material
+    }
+    return true;
+  }) || ['А'];
 }
 
 // ── helper: determine what fields an excerpt needs based on its steps ──
@@ -4430,14 +4503,20 @@ function getDayExcerptLetters(dayNum){
 function getExcerptFields(dayNum, letter){
   const d = DAYS.find(d=>d.day===dayNum);
   if(!d||!d.groups) return {needText:false, needTranslation:false};
-  const groups = d.groups.filter(g=> g.title.includes('Отрывок '+letter));
+  const groups = d.groups.filter(g=> extractLettersFromTitle(g.title).includes(letter));
   let needText = false, needTranslation = false;
   groups.forEach(g=>{
+    // Check if this is a mixed group (e.g. "Отрывки К и Л") with per-letter step prefixes
+    const isMixed = extractLettersFromTitle(g.title).length > 1;
     g.steps.forEach(s=>{
-      // Check note field AND inline (ЛN) markers in step text
-      const allText = (s.note||'') + ' ' + (s.t||'');
-      if(/Л2/.test(allText)) needText = true;
-      if(/Л3|Л4/.test(allText)) { needText = true; needTranslation = true; }
+      const stepText = (s.note||'') + ' ' + (s.t||'');
+      // For mixed groups, only consider step if it starts with this letter prefix e.g. "К:" or "Л:"
+      if(isMixed){
+        const prefixM = (s.t||'').match(/^([А-ЯЁ]):/);
+        if(prefixM && prefixM[1] !== letter) return; // skip - this step is for a different letter
+      }
+      if(/Л2/.test(stepText)) needText = true;
+      if(/Л3|Л4/.test(stepText)) { needText = true; needTranslation = true; }
     });
   });
   return {needText, needTranslation};
@@ -4515,6 +4594,23 @@ function toggleMat(dayNum){
           }
         }
       });
+      // Add any missing letters that aren't in existing segments yet
+      const existingLetters = segs.map(s=>s.letter).filter(Boolean);
+      letters.forEach(letter=>{
+        if(!existingLetters.includes(letter)){
+          const {needText, needTranslation} = getExcerptFields(dayNum, letter);
+          const inherited = inheritSegment(dayNum, letter);
+          const hasInheritedData = inherited && (inherited.url || inherited.text || inherited.translation);
+          segs.push({
+            letter,
+            url: inherited ? inherited.url : '',
+            text: needText ? (inherited && inherited.text != null ? inherited.text : '') : null,
+            translation: needTranslation ? (inherited && inherited.translation != null ? inherited.translation : '') : null,
+            _editing: !hasInheritedData,
+          });
+          changed = true;
+        }
+      });
       if(changed) saveData();
     }
   }
@@ -4545,12 +4641,35 @@ function matDelSeg(dayNum, si, e){
   e.stopPropagation();
   const mat=state.materials[dayNum];
   if(!mat||!mat.segments) return;
-  if(!confirm(`Удалить отрывок ${(mat.segments[si]&&mat.segments[si].letter)||LETTERS[si]||si+1}?`)) return;
-  mat.segments.splice(si,1);
-  if(mat.segments.length===0) delete state.materials[dayNum];
-  saveData();
-  openMaterials.add(dayNum);
-  buildDays();
+  // Replace ✕ button with inline confirm
+  const block = document.getElementById(`msblock-${dayNum}-${si}`);
+  if(!block) return;
+  const delBtn = block.querySelector('.mat-seg-block-del');
+  if(!delBtn) return;
+  if(delBtn.dataset.confirming){
+    // Second click — confirmed
+    mat.segments.splice(si,1);
+    if(mat.segments.length===0) delete state.materials[dayNum];
+    saveData();
+    openMaterials.add(dayNum);
+    buildDays();
+  } else {
+    // First click — ask
+    delBtn.dataset.confirming = '1';
+    delBtn.textContent = 'Удалить?';
+    delBtn.style.background = 'var(--red-l)';
+    delBtn.style.color = 'var(--red)';
+    delBtn.style.borderColor = 'var(--red)';
+    setTimeout(()=>{
+      if(delBtn.dataset.confirming){
+        delete delBtn.dataset.confirming;
+        delBtn.textContent = '✕';
+        delBtn.style.background = '';
+        delBtn.style.color = '';
+        delBtn.style.borderColor = '';
+      }
+    }, 3000);
+  }
 }
 
 // ── per-segment edit / save ───────────────────
