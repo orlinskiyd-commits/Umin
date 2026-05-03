@@ -4466,18 +4466,18 @@ function buildMatPanel(dayNum, mat, isOpen){
 // handles "Отрывок А", "Отрывки К и Л", "Отрывки В, Г, Д"
 function extractLettersFromTitle(title){
   const codes = [];
-  // plural: "Отрывки К и Л", "Отрывки В, Г, Д", "Отрывки К, Л, М"
-  const pluralM = title.match(/Отрывки\s+([\sА-ЯЁа-яё,]+)/);
+  // plural: "Отрывки К и Л", "Новые отрывки К, Л, М, Н", "Отрывки В, Г, Д"
+  const pluralM = title.match(/[Оо]трывки\s+([\sА-ЯЁа-яё,]+)/);
   if(pluralM){
     const parts = pluralM[1].split(/[\s,]+/);
     parts.forEach(p=>{ if(/^[А-ЯЁ]$/.test(p) && !codes.includes(p)) codes.push(p); });
-    return codes;
+    if(codes.length > 0) return codes;
   }
   // sub-excerpt: "Подотрывок А1", "Подотрывок А2" → full code "А1", "А2"
   const subM = title.match(/Подотрывок\s+([А-ЯЁ]\d+)/);
   if(subM){ codes.push(subM[1]); return codes; }
   // singular: "Отрывок А"
-  const singleM = title.match(/Отрывок\s+([А-ЯЁ])/);
+  const singleM = title.match(/[Оо]трывок\s+([А-ЯЁ])(?:\s|—|–|-|$)/);
   if(singleM) codes.push(singleM[1]);
   return codes;
 }
