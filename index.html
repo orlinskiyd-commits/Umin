@@ -4536,12 +4536,15 @@ function inheritSegment(dayNum, code){
         return {url: seg.url||'', text: seg.text||'', translation: seg.translation||''};
     }
 
-    // For sub-excerpts (А1): inherit text/translation from base letter А, and also URL
+    // For sub-excerpts (А1, А2...): inherit text/translation from base letter А, URL only for А1
     if(baseLetter && prevLetters.includes(baseLetter)){
       let seg = prevMat.segments.find(s=>s.letter===baseLetter);
       if(!seg){ const idx=prevLetters.indexOf(baseLetter); if(idx>=0&&idx<prevMat.segments.length) seg=prevMat.segments[idx]; }
-      if(seg && (seg.url || seg.text || seg.translation))
-        return {url: seg.url||'', text: seg.text||'', translation: seg.translation||''};
+      if(seg && (seg.url || seg.text || seg.translation)){
+        // Only А1 inherits URL (same start of video), А2/А3 get empty URL
+        const inheritUrl = code.endsWith('1') ? (seg.url||'') : '';
+        return {url: inheritUrl, text: seg.text||'', translation: seg.translation||''};
+      }
     }
   }
   return null;
