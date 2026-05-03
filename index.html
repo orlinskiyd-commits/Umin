@@ -4413,6 +4413,17 @@ function buildMatPanel(dayNum, mat, isOpen){
     }
   });
   if(syncChanged) saveData();
+
+  // Sort segments by required lesson order
+  mat.segments.sort((a, b)=>{
+    const ai = requiredLetters.indexOf(a.letter);
+    const bi = requiredLetters.indexOf(b.letter);
+    if(ai === -1 && bi === -1) return 0;
+    if(ai === -1) return 1;  // unknown - put at end
+    if(bi === -1) return -1;
+    return ai - bi;
+  });
+
   const segs = mat.segments || [];
   const hasContent = segs.length > 0;
 
@@ -4446,74 +4457,50 @@ function buildMatPanel(dayNum, mat, isOpen){
 // ── helper: extract excerpt letters from a group title ──
 // handles "Отрывок А", "Отрывки К и Л", "Отрывки В, Г, Д"
 function extractLettersFromTitle(title){
-  const letters = [];
-  // Check for plural "Отрывки К и Л", "Отрывки В, Г, Д"
+  const codes = [];
+  // plural: "Отрывки К и Л", "Отрывки В, Г, Д", "Отрывки К, Л, М"
   const pluralM = title.match(/Отрывки\s+([\sА-ЯЁа-яё,]+)/);
   if(pluralM){
     const parts = pluralM[1].split(/[\s,]+/);
-    parts.forEach(p=>{
-      if(/^[А-ЯЁ]$/.test(p)){
-        if(!letters.includes(p)) letters.push(p);
-      }
-    });
-    return letters;
+    parts.forEach(p=>{ if(/^[А-ЯЁ]$/.test(p) && !codes.includes(p)) codes.push(p); });
+    return codes;
   }
-  // Sub-excerpt "Подотрывок А1", "Подотрывок Б2" → base letter А, Б etc
-  const subM = title.match(/Подотрывок\s+([А-ЯЁ])\d/);
-  if(subM){ letters.push(subM[1]); return letters; }
-  // Singular "Отрывок А"
+  // sub-excerpt: "Подотрывок А1", "Подотрывок А2" → full code "А1", "А2"
+  const subM = title.match(/Подотрывок\s+([А-ЯЁ]\d+)/);
+  if(subM){ codes.push(subM[1]); return codes; }
+  // singular: "Отрывок А"
   const singleM = title.match(/Отрывок\s+([А-ЯЁ])/);
-  if(singleM) letters.push(singleM[1]);
-  return letters;
+  if(singleM) codes.push(singleM[1]);
+  return codes;
 }
 
 function getDayExcerptLetters(dayNum){
   const d = DAYS.find(d=>d.day===dayNum);
   if(!d||!d.groups) return ['А'];
-  const allFound = [];
-  const subOnlyLetters = new Set(); // letters that appear ONLY in Подотрывок groups
-  const fullLetters = new Set();    // letters that appear in full Отрывок groups
-
+  const found = [];
   d.groups.forEach(g=>{
-    const letters = extractLettersFromTitle(g.title);
-    const isSub = /Подотрывок/.test(g.title);
-    letters.forEach(l=>{
-      if(!allFound.includes(l)) allFound.push(l);
-      if(isSub) subOnlyLetters.add(l);
-      else fullLetters.add(l);
+    extractLettersFromTitle(g.title).forEach(l=>{
+      if(!found.includes(l)) found.push(l);
     });
   });
-
-  // Filter: keep letter if it has a full Отрывок group, OR if it's new (not in any previous lesson)
-  return allFound.filter(l=>{
-    if(fullLetters.has(l)) return true; // has explicit Отрывок group
-    // Only in Подотрывок — skip if this letter existed in a previous lesson
-    for(let pd = dayNum-1; pd >= 1; pd--){
-      const prev = DAYS.find(dd=>dd.day===pd);
-      if(!prev||!prev.groups) continue;
-      const prevFull = prev.groups.some(g=> !(/Подотрывок/.test(g.title)) && extractLettersFromTitle(g.title).includes(l));
-      if(prevFull) return false; // it's a repeat/practice, not new material
-    }
-    return true;
-  }) || ['А'];
+  return found.length > 0 ? found : ['А'];
 }
 
 // ── helper: determine what fields an excerpt needs based on its steps ──
 // returns {needText, needTranslation}
-function getExcerptFields(dayNum, letter){
+function getExcerptFields(dayNum, code){
   const d = DAYS.find(d=>d.day===dayNum);
   if(!d||!d.groups) return {needText:false, needTranslation:false};
-  const groups = d.groups.filter(g=> extractLettersFromTitle(g.title).includes(letter));
+  const groups = d.groups.filter(g=> extractLettersFromTitle(g.title).includes(code));
   let needText = false, needTranslation = false;
   groups.forEach(g=>{
-    // Check if this is a mixed group (e.g. "Отрывки К и Л") with per-letter step prefixes
     const isMixed = extractLettersFromTitle(g.title).length > 1;
     g.steps.forEach(s=>{
       const stepText = (s.note||'') + ' ' + (s.t||'');
-      // For mixed groups, only consider step if it starts with this letter prefix e.g. "К:" or "Л:"
       if(isMixed){
+        // In mixed groups like "Отрывки К и Л", steps prefixed "К:" or "Л:"
         const prefixM = (s.t||'').match(/^([А-ЯЁ]):/);
-        if(prefixM && prefixM[1] !== letter) return; // skip - this step is for a different letter
+        if(prefixM && prefixM[1] !== code) return;
       }
       if(/Л2/.test(stepText)) needText = true;
       if(/Л3|Л4/.test(stepText)) { needText = true; needTranslation = true; }
@@ -4523,21 +4510,30 @@ function getExcerptFields(dayNum, letter){
 }
 
 // ── helper: find matching segment from a previous lesson ──
-function inheritSegment(dayNum, letter){
-  // look backwards through previous days for same letter segment with content
+function inheritSegment(dayNum, code){
+  // For sub-excerpts like А1, А2 - also try base letter А for text inheritance
+  const baseLetterM = code.match(/^([А-ЯЁ])\d+$/);
+  const baseLetter = baseLetterM ? baseLetterM[1] : null;
+
   for(let d = dayNum-1; d >= 1; d--){
     const prevLetters = getDayExcerptLetters(d);
-    if(!prevLetters.includes(letter)) continue;
     const prevMat = state.materials && state.materials[d];
     if(!prevMat || !prevMat.segments) continue;
-    // Find by letter field, or fall back to index position
-    let seg = prevMat.segments.find(s=>s.letter===letter);
-    if(!seg){
-      const idx = prevLetters.indexOf(letter);
-      if(idx >= 0 && idx < prevMat.segments.length) seg = prevMat.segments[idx];
+
+    // Exact match (same code А1 or same letter А)
+    if(prevLetters.includes(code)){
+      let seg = prevMat.segments.find(s=>s.letter===code);
+      if(!seg){ const idx=prevLetters.indexOf(code); if(idx>=0&&idx<prevMat.segments.length) seg=prevMat.segments[idx]; }
+      if(seg && (seg.url || seg.text || seg.translation))
+        return {url: seg.url||'', text: seg.text||'', translation: seg.translation||''};
     }
-    if(seg && (seg.url || seg.text || seg.translation)){
-      return {url: seg.url||'', text: seg.text||'', translation: seg.translation||''};
+
+    // For sub-excerpts (А1): inherit text/translation from base letter А, and also URL
+    if(baseLetter && prevLetters.includes(baseLetter)){
+      let seg = prevMat.segments.find(s=>s.letter===baseLetter);
+      if(!seg){ const idx=prevLetters.indexOf(baseLetter); if(idx>=0&&idx<prevMat.segments.length) seg=prevMat.segments[idx]; }
+      if(seg && (seg.url || seg.text || seg.translation))
+        return {url: seg.url||'', text: seg.text||'', translation: seg.translation||''};
     }
   }
   return null;
