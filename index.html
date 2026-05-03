@@ -4389,6 +4389,14 @@ function buildMatPanel(dayNum, mat, isOpen){
   const requiredLetters = getDayExcerptLetters(dayNum);
   const existingLetters = mat.segments.map(s=>s.letter).filter(Boolean);
   let syncChanged = false;
+  // Remove segments that don't belong to this lesson (were inherited incorrectly)
+  const before = mat.segments.length;
+  mat.segments = mat.segments.filter(seg=>{
+    if(!seg.letter) return true; // keep old segments without letter (will be assigned above)
+    return requiredLetters.includes(seg.letter);
+  });
+  if(mat.segments.length !== before) syncChanged = true;
+
   // Assign missing letters by index to old segments without letter
   mat.segments.forEach((seg,si)=>{
     if(!seg.letter && requiredLetters[si]){
