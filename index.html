@@ -4510,7 +4510,7 @@ function getExcerptFields(dayNum, code){
         const prefixM = (s.t||'').match(/^([А-ЯЁ]):/);
         if(prefixM && prefixM[1] !== code) return;
       }
-      if(/Л2/.test(stepText)) needText = true;
+      if(/Л2|Л6|Л7|Л8|Л9/.test(stepText)) needText = true;
       if(/Л3|Л4/.test(stepText)) { needText = true; needTranslation = true; }
     });
   });
