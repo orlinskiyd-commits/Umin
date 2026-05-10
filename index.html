@@ -4290,30 +4290,35 @@ function buildSegPlayerHtml(dayNum, si, url, seg){
     const endScript = (startSec > 0 || endSec > 0) ? `
       <scr`+'ipt'+`>
         (function(){
+          var seeked = false;
           function initVimeoPlayer(){
             var iframe = document.getElementById('${pid}');
             if(!iframe || typeof Vimeo === 'undefined') return;
             var player = new Vimeo.Player(iframe);
             ${startSec > 0 ? `
+            // Seek on play — most reliable method
+            player.on('play', function(){
+              if(!seeked){
+                seeked = true;
+                player.setCurrentTime(${startSec}).catch(function(){});
+              }
+            });
+            // Also try after ready
             player.ready().then(function(){
-              player.setCurrentTime(${startSec}).catch(function(){});
-            });` : ''}
+              setTimeout(function(){
+                player.setCurrentTime(${startSec}).catch(function(){});
+              }, 300);
+            }).catch(function(){});` : ''}
             ${endSec > 0 ? `
             player.on('timeupdate', function(d){
               if(d.seconds >= ${endSec}){
                 player.pause();
                 player.setCurrentTime(${startSec > 0 ? startSec : 0}).catch(function(){});
+                seeked = false;
               }
             });` : ''}
           }
-          var iframe = document.getElementById('${pid}');
-          if(iframe && iframe.contentWindow){
-            iframe.addEventListener('load', initVimeoPlayer);
-            // Also try immediately in case already loaded
-            setTimeout(initVimeoPlayer, 1500);
-          } else {
-            setTimeout(initVimeoPlayer, 1500);
-          }
+          setTimeout(initVimeoPlayer, 800);
         })();
       </scr`+'ipt'+`>` : '';
     return `<div class="mat-player show" style="padding:0;background:none;border:none;">
