@@ -6,6 +6,7 @@
 <title>УМИН — Программа изучения языка</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Source+Code+Pro:wght@400;500;600&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<script src="https://player.vimeo.com/api/player.js"></script>
 <style>
 /* ════════════════════════════════════════════
    CSS VARIABLES & RESET
@@ -312,6 +313,15 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:15
 }
 .mat-url-input:focus{border-color:var(--gold-dim);}
 .mat-url-input::placeholder{color:var(--text3);}
+.time-min-input,.time-sec-input{
+  flex:none!important;min-width:0!important;width:44px!important;
+  padding:4px 4px!important;text-align:center;
+  -moz-appearance:textfield;
+}
+.time-min-input::-webkit-inner-spin-button,
+.time-min-input::-webkit-outer-spin-button,
+.time-sec-input::-webkit-inner-spin-button,
+.time-sec-input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
 .mat-btn{
   padding:7px 12px;border-radius:4px;border:1px solid var(--border2);
   background:transparent;color:var(--text3);font-family:var(--mono);font-size:10px;
@@ -4257,37 +4267,75 @@ function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
 const LETTERS = 'АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩ';
 
 // ── build player for one segment ─────────────
-function buildSegPlayerHtml(dayNum, si, url){
+// ── convert "m:ss" or "mm:ss" to total seconds ──
+function timeToSeconds(t){
+  if(!t) return 0;
+  const parts = t.split(':').map(Number);
+  if(parts.length === 2) return (parts[0]||0)*60 + (parts[1]||0);
+  if(parts.length === 1) return parts[0]||0;
+  return 0;
+}
+
+function buildSegPlayerHtml(dayNum, si, url, seg){
   const type = detectUrlType(url);
   const pid = `mp-${dayNum}-${si}`;
+  const startSec = timeToSeconds(seg && seg.timeStart);
+  const endSec   = timeToSeconds(seg && seg.timeEnd);
+  const timeLabel = (seg && (startSec > 0 || endSec > 0))
+    ? `<div style="font-size:11px;color:var(--text2);margin-top:4px;">⏱ ${seg.timeStart||'0:00'} — ${seg.timeEnd||'конец'}</div>`
+    : '';
+
   if(type==='vimeo'){
     const vid=getVimeoId(url); if(!vid) return '<div class="mat-hint">⚠ Не удалось распознать Vimeo ID</div>';
+    const endScript = (startSec > 0 || endSec > 0) ? `
+      <scr`+'ipt'+`>
+        (function(){
+          var attempts = 0;
+          function initPlayer(){
+            var iframe = document.getElementById('${pid}');
+            if(!iframe || typeof Vimeo === 'undefined'){ if(++attempts < 20) setTimeout(initPlayer, 300); return; }
+            var player = new Vimeo.Player(iframe);
+            ${startSec > 0 ? `player.ready().then(function(){ player.setCurrentTime(${startSec}); });` : ''}
+            ${endSec > 0 ? `player.on('timeupdate', function(d){ if(d.seconds >= ${endSec}){ player.pause(); player.setCurrentTime(${startSec||0}); } });` : ''}
+          }
+          initPlayer();
+        })();
+      </scr`+'ipt'+`>` : '';
     return `<div class="mat-player show" style="padding:0;background:none;border:none;">
       <div style="position:relative;padding-bottom:56.25%;height:0;border-radius:6px;overflow:hidden;border:1px solid var(--border);">
         <iframe id="${pid}" src="https://player.vimeo.com/video/${vid}?badge=0&autopause=0&player_id=0&app_id=58479"
           allow="autoplay; fullscreen; picture-in-picture"
           style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;" title="Vimeo"></iframe>
       </div>
+      ${timeLabel}
       <div class="mat-speed-row" style="margin-top:8px;">
         <span class="mat-speed-label">Скорость:</span>
         ${[0.5,0.75,1,1.25,1.5].map(s=>`<button class="mat-speed-btn${s===1?' active':''}" onclick="matSpeedVimeo('${pid}',${s},this,event)">${s}×</button>`).join('')}
       </div>
       <div class="mat-hint">💡 Скорость работает для Vimeo Pro+. Иначе — шестерёнка ⚙ внутри плеера.</div>
+      ${endScript}
     </div>`;
   }
   if(type==='youtube'){
     const vid=getYouTubeId(url); if(!vid) return '<div class="mat-hint">⚠ Не удалось распознать YouTube ID</div>';
+    const startParam = startSec ? `&start=${startSec}` : '';
+    const endParam   = endSec   ? `&end=${endSec}`     : '';
     return `<div class="mat-player show" style="padding:0;background:none;border:none;">
       <div style="position:relative;padding-bottom:56.25%;height:0;border-radius:6px;overflow:hidden;border:1px solid var(--border);">
-        <iframe id="${pid}" src="https://www.youtube.com/embed/${vid}?enablejsapi=1"
+        <iframe id="${pid}" src="https://www.youtube.com/embed/${vid}?enablejsapi=1${startParam}${endParam}"
           allow="autoplay; fullscreen"
           style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;" title="YouTube"></iframe>
       </div>
+      ${timeLabel}
       <div class="mat-hint" style="margin-top:6px;">💡 Скорость — через ⚙ внутри плеера YouTube.</div>
     </div>`;
   }
+  // audio file
   return `<div class="mat-player show">
-    <audio id="${pid}" controls preload="none" src="${escHtml(url)}" style="width:100%;height:32px;margin-bottom:8px;"></audio>
+    <audio id="${pid}" controls preload="none" src="${escHtml(url)}"
+      ${startSec ? `onloadedmetadata="this.currentTime=${startSec}"` : ''}
+      style="width:100%;height:32px;margin-bottom:8px;"></audio>
+    ${timeLabel}
     <div class="mat-speed-row">
       <span class="mat-speed-label">Скорость:</span>
       ${[0.5,0.65,0.75,1,1.25].map(s=>`<button class="mat-speed-btn${s===1?' active':''}" onclick="matSpeedAudio('${pid}',${s},this,event)">${s}×</button>`).join('')}
@@ -4297,7 +4345,9 @@ function buildSegPlayerHtml(dayNum, si, url){
 
 // ── build one segment block ───────────────────
 function buildSegBlock(dayNum, si, seg, _unused){
-  const letter = seg.letter || (si < LETTERS.length ? LETTERS[si] : (si+1));
+  const noMatch2 = (seg.letter||'').match(/^НО(\d+)$/);
+  const letter = noMatch2 ? seg.letter : (seg.letter || (si < LETTERS.length ? LETTERS[si] : (si+1)));
+  const displayTitle = noMatch2 ? `Новый отрывок ${noMatch2[1]}` : `Отрывок ${letter}`;
   const hasUrl  = !!seg.url;
   const needsText  = seg.text !== null;        // field exists (even if empty)
   const needsTrans = seg.translation !== null; // field exists (even if empty)
@@ -4307,7 +4357,7 @@ function buildSegBlock(dayNum, si, seg, _unused){
   // read view
   let contentHtml = '';
   if(!editMode){
-    contentHtml += hasUrl ? buildSegPlayerHtml(dayNum, si, seg.url) : '';
+    contentHtml += hasUrl ? buildSegPlayerHtml(dayNum, si, seg.url, seg) : '';
 
     if(needsText){
       const origText  = escHtml(seg.text||'').replace(/\n/g,'<br>');
@@ -4354,6 +4404,29 @@ function buildSegBlock(dayNum, si, seg, _unused){
           placeholder="Ссылка: Vimeo, YouTube, Google Drive, Dropbox, URL…"
           value="${escHtml(seg.url||'')}">
       </div>
+      <div style="display:flex;gap:16px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:4px;">
+          <span style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-right:4px;">▶ Начало</span>
+          <input type="number" min="0" class="mat-url-input time-min-input" id="msstart-m-${dayNum}-${si}"
+            placeholder="0" style="width:44px;text-align:center;padding:4px 4px;"
+            value="${seg.timeStart ? seg.timeStart.split(':')[0] : ''}">
+          <span style="color:var(--text2);font-weight:500;margin:0 2px;">:</span>
+          <input type="number" min="0" max="59" class="mat-url-input time-sec-input" id="msstart-s-${dayNum}-${si}"
+            placeholder="00" style="width:44px;text-align:center;padding:4px 4px;"
+            value="${seg.timeStart ? seg.timeStart.split(':')[1] : ''}">
+        </div>
+        <div style="display:flex;align-items:center;gap:4px;">
+          <span style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-right:4px;">⏹ Конец</span>
+          <input type="number" min="0" class="mat-url-input time-min-input" id="msend-m-${dayNum}-${si}"
+            placeholder="0" style="width:44px;text-align:center;padding:4px 4px;"
+            value="${seg.timeEnd ? seg.timeEnd.split(':')[0] : ''}">
+          <span style="color:var(--text2);font-weight:500;margin:0 2px;">:</span>
+          <input type="number" min="0" max="59" class="mat-url-input time-sec-input" id="msend-s-${dayNum}-${si}"
+            placeholder="00" style="width:44px;text-align:center;padding:4px 4px;"
+            value="${seg.timeEnd ? seg.timeEnd.split(':')[1] : ''}">
+        </div>
+        <span style="font-size:11px;color:var(--text3);font-style:italic;">мин : сек</span>
+      </div>
       ${textHtml}`;
   }
 
@@ -4364,8 +4437,8 @@ function buildSegBlock(dayNum, si, seg, _unused){
   return `
     <div class="mat-seg-block" id="msblock-${dayNum}-${si}">
       <div class="mat-seg-block-head">
-        <span class="mat-seg-block-letter">${letter}</span>
-        <span class="mat-seg-block-title">Отрывок ${letter}</span>
+        <span class="mat-seg-block-letter">${noMatch2 ? '★' : letter}</span>
+        <span class="mat-seg-block-title">${displayTitle}</span>
         <div style="display:flex;gap:6px;margin-left:auto;">
           ${editBtn}
           <button class="mat-seg-block-del" onclick="matDelSeg(${dayNum},${si},event)" title="Удалить отрывок">✕</button>
@@ -4487,9 +4560,17 @@ function getDayExcerptLetters(dayNum){
   if(!d||!d.groups) return ['А'];
   const found = [];
   d.groups.forEach(g=>{
-    extractLettersFromTitle(g.title).forEach(l=>{
-      if(!found.includes(l)) found.push(l);
-    });
+    const letters = extractLettersFromTitle(g.title);
+    if(letters.length > 0){
+      letters.forEach(l=>{ if(!found.includes(l)) found.push(l); });
+    } else if(/[Нн]овы[еий]\s+отрывк|[Чч]етыре\s+новых\s+отрывк/.test(g.title)){
+      // Unnamed new excerpts group — create НО1..НОN slots based on step count
+      const count = (g.steps||[]).length || 4;
+      for(let i=1; i<=count; i++){
+        const code = 'НО'+i;
+        if(!found.includes(code)) found.push(code);
+      }
+    }
   });
   return found.length > 0 ? found : ['А'];
 }
@@ -4499,6 +4580,23 @@ function getDayExcerptLetters(dayNum){
 function getExcerptFields(dayNum, code){
   const d = DAYS.find(d=>d.day===dayNum);
   if(!d||!d.groups) return {needText:false, needTranslation:false};
+
+  // НО1..НОN — unnamed new excerpt slots, check corresponding step
+  const noMatch = code.match(/^НО(\d+)$/);
+  if(noMatch){
+    const idx = parseInt(noMatch[1]) - 1;
+    let needText = false, needTranslation = false;
+    d.groups.forEach(g=>{
+      if(!/[Нн]овы[еий]\s+отрывк|[Чч]етыре\s+новых\s+отрывк/.test(g.title)) return;
+      const step = g.steps[idx];
+      if(!step) return;
+      const t = (step.t||'') + (step.note||'');
+      if(/Л2|Л6|Л7|Л8|Л9/.test(t)) needText = true;
+      if(/Л3|Л4/.test(t)) { needText = true; needTranslation = true; }
+    });
+    return {needText, needTranslation};
+  }
+
   const groups = d.groups.filter(g=> extractLettersFromTitle(g.title).includes(code));
   let needText = false, needTranslation = false;
   groups.forEach(g=>{
@@ -4506,7 +4604,6 @@ function getExcerptFields(dayNum, code){
     g.steps.forEach(s=>{
       const stepText = (s.note||'') + ' ' + (s.t||'');
       if(isMixed){
-        // In mixed groups like "Отрывки К и Л", steps prefixed "К:" or "Л:"
         const prefixM = (s.t||'').match(/^([А-ЯЁ]):/);
         if(prefixM && prefixM[1] !== code) return;
       }
@@ -4704,7 +4801,20 @@ function matSaveSeg(dayNum, si, e){
     if(type==='audio'){ url=convertGDriveUrl(url); url=convertDropboxUrl(url); }
     seg.url = url;
   }
-  if(origEl)  seg.text = origEl.value.trim();
+  const startM = document.getElementById(`msstart-m-${dayNum}-${si}`);
+  const startS = document.getElementById(`msstart-s-${dayNum}-${si}`);
+  const endM   = document.getElementById(`msend-m-${dayNum}-${si}`);
+  const endS   = document.getElementById(`msend-s-${dayNum}-${si}`);
+  if(startM){
+    const m = parseInt(startM.value)||0;
+    const s = parseInt(startS&&startS.value)||0;
+    seg.timeStart = (m > 0 || s > 0) ? m+':'+String(s).padStart(2,'0') : '';
+  }
+  if(endM){
+    const m = parseInt(endM.value)||0;
+    const s = parseInt(endS&&endS.value)||0;
+    seg.timeEnd = (m > 0 || s > 0) ? m+':'+String(s).padStart(2,'0') : '';
+  }
   else if(seg.text === null){
     // field not shown - re-evaluate if it should exist now based on lesson requirements
     const {needText, needTranslation} = getExcerptFields(dayNum, seg.letter || (si < LETTERS.length ? LETTERS[si] : String(si+1)));
@@ -4720,6 +4830,24 @@ function matSaveSeg(dayNum, si, e){
   openMaterials.add(dayNum);
   buildDays();
 }
+
+// ── time input auto-behavior ──────────────────
+document.addEventListener('input', function(e){
+  const el = e.target;
+  if(el.classList.contains('time-min-input')){
+    // auto-jump to sec field after 2+ digits or when value >= 10
+    if(el.value.length >= 2){
+      const next = el.parentElement.querySelector('.time-sec-input');
+      if(next){ next.focus(); next.select(); }
+    }
+  }
+  if(el.classList.contains('time-sec-input')){
+    // clamp to 0-59
+    let v = parseInt(el.value)||0;
+    if(v > 59){ el.value = 59; }
+    if(v < 0)  { el.value = 0; }
+  }
+});
 
 function matClear(dayNum, e){
   e.stopPropagation();
