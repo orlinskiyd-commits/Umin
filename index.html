@@ -4287,40 +4287,32 @@ function buildSegPlayerHtml(dayNum, si, url, seg){
 
   if(type==='vimeo'){
     const vid=getVimeoId(url); if(!vid) return '<div class="mat-hint">⚠ Не удалось распознать Vimeo ID</div>';
-    const endScript = (startSec > 0 || endSec > 0) ? `
+    const seekBtn = startSec > 0 ? `
+      <button onclick="(function(){
+        var p=new Vimeo.Player(document.getElementById('${pid}'));
+        p.setCurrentTime(${startSec}).then(function(){p.play();}).catch(function(){});
+      })()" style="margin-top:6px;padding:4px 12px;font-size:11px;border-radius:4px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);cursor:pointer;font-family:var(--mono);">
+        ▶ Начать с ${seg.timeStart}
+      </button>` : '';
+
+    const endScript = endSec > 0 ? `
       <scr`+'ipt'+`>
         (function(){
-          var seeked = false;
-          function initVimeoPlayer(){
+          function initEnd(){
             var iframe = document.getElementById('${pid}');
             if(!iframe || typeof Vimeo === 'undefined') return;
             var player = new Vimeo.Player(iframe);
-            ${startSec > 0 ? `
-            // Seek on play — most reliable method
-            player.on('play', function(){
-              if(!seeked){
-                seeked = true;
-                player.setCurrentTime(${startSec}).catch(function(){});
-              }
-            });
-            // Also try after ready
-            player.ready().then(function(){
-              setTimeout(function(){
-                player.setCurrentTime(${startSec}).catch(function(){});
-              }, 300);
-            }).catch(function(){});` : ''}
-            ${endSec > 0 ? `
             player.on('timeupdate', function(d){
               if(d.seconds >= ${endSec}){
                 player.pause();
-                player.setCurrentTime(${startSec > 0 ? startSec : 0}).catch(function(){});
-                seeked = false;
+                ${startSec > 0 ? `player.setCurrentTime(${startSec}).catch(function(){});` : ''}
               }
-            });` : ''}
+            });
           }
-          setTimeout(initVimeoPlayer, 800);
+          setTimeout(initEnd, 1000);
         })();
       </scr`+'ipt'+`>` : '';
+
     return `<div class="mat-player show" style="padding:0;background:none;border:none;">
       <div style="position:relative;padding-bottom:56.25%;height:0;border-radius:6px;overflow:hidden;border:1px solid var(--border);">
         <iframe id="${pid}" src="https://player.vimeo.com/video/${vid}?badge=0&autopause=0&player_id=0&app_id=58479"
@@ -4328,6 +4320,7 @@ function buildSegPlayerHtml(dayNum, si, url, seg){
           style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;" title="Vimeo"></iframe>
       </div>
       ${timeLabel}
+      ${seekBtn}
       <div class="mat-speed-row" style="margin-top:8px;">
         <span class="mat-speed-label">Скорость:</span>
         ${[0.5,0.75,1,1.25,1.5].map(s=>`<button class="mat-speed-btn${s===1?' active':''}" onclick="matSpeedVimeo('${pid}',${s},this,event)">${s}×</button>`).join('')}
