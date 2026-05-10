@@ -3817,7 +3817,7 @@ function buildDays(){
 
       // build groups
       const groupsHtml = d.groups.map(g=>{
-        const noCheck = !g.badge; // groups with no badge (e.g. "Оценить занятие") have no checkboxes
+        const noCheck = !(g.badge||g.chip); // groups with no badge/chip (e.g. "Оценить занятие") have no checkboxes
         const steps = g.steps.map((s,si)=>{
           const stepKey = `${d.day}_${g.n}_${si}`;
           const isChecked = !!(state.stepsDone && state.stepsDone[stepKey]);
@@ -3838,7 +3838,7 @@ function buildDays(){
             <span class="step-text">${s.t}${s.note?`<span class="step-note">${s.note}</span>`:''}</span>
           </div>`;
         }).join('');
-        const noCheckGroup = !g.badge;
+        const noCheckGroup = !(g.badge||g.chip);
         const checkableSteps = noCheckGroup ? [] : g.steps.map((s,si)=>({s,si})).filter(({s})=>s.note || /\(Л\d+\)/.test(s.t||''));
         const totalSteps = checkableSteps.length;
         const doneSteps = checkableSteps.filter(({si})=>state.stepsDone && state.stepsDone[`${d.day}_${g.n}_${si}`]).length;
@@ -4233,7 +4233,7 @@ function toggleStep(key, dayNum, e){
   const gn = parts[1];
   const g = d.groups.find(g=>g.n===gn);
   if(!g) return;
-  const checkableSteps = g.badge ? g.steps.map((s,si)=>({s,si})).filter(({s})=>s.note || /\(Л\d+\)/.test(s.t||'')) : [];
+  const checkableSteps = (g.badge||g.chip) ? g.steps.map((s,si)=>({s,si})).filter(({s})=>s.note || /\(Л\d+\)/.test(s.t||'')) : [];
   const totalSteps = checkableSteps.length;
   const doneSteps = checkableSteps.filter(({si})=>state.stepsDone && state.stepsDone[`${dayNum}_${gn}_${si}`]).length;
   const pct = totalSteps > 0 ? Math.round(doneSteps/totalSteps*100) : 0;
@@ -4290,15 +4290,30 @@ function buildSegPlayerHtml(dayNum, si, url, seg){
     const endScript = (startSec > 0 || endSec > 0) ? `
       <scr`+'ipt'+`>
         (function(){
-          var attempts = 0;
-          function initPlayer(){
+          function initVimeoPlayer(){
             var iframe = document.getElementById('${pid}');
-            if(!iframe || typeof Vimeo === 'undefined'){ if(++attempts < 20) setTimeout(initPlayer, 300); return; }
+            if(!iframe || typeof Vimeo === 'undefined') return;
             var player = new Vimeo.Player(iframe);
-            ${startSec > 0 ? `player.ready().then(function(){ player.setCurrentTime(${startSec}); });` : ''}
-            ${endSec > 0 ? `player.on('timeupdate', function(d){ if(d.seconds >= ${endSec}){ player.pause(); player.setCurrentTime(${startSec||0}); } });` : ''}
+            ${startSec > 0 ? `
+            player.ready().then(function(){
+              player.setCurrentTime(${startSec}).catch(function(){});
+            });` : ''}
+            ${endSec > 0 ? `
+            player.on('timeupdate', function(d){
+              if(d.seconds >= ${endSec}){
+                player.pause();
+                player.setCurrentTime(${startSec > 0 ? startSec : 0}).catch(function(){});
+              }
+            });` : ''}
           }
-          initPlayer();
+          var iframe = document.getElementById('${pid}');
+          if(iframe && iframe.contentWindow){
+            iframe.addEventListener('load', initVimeoPlayer);
+            // Also try immediately in case already loaded
+            setTimeout(initVimeoPlayer, 1500);
+          } else {
+            setTimeout(initVimeoPlayer, 1500);
+          }
         })();
       </scr`+'ipt'+`>` : '';
     return `<div class="mat-player show" style="padding:0;background:none;border:none;">
